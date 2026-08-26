@@ -7,3 +7,7 @@ export function summarizeSubtasks(subtasks: SubtaskState[], taskId: string) {
     total: matching.length,
   }
 }
+
+export function createBoardDraft(name: string, description: string, color: string) {
+  return { name: name.trim(), description: description.trim(), color }
+}

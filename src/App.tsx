@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { createTaskDraft, moveTask, updateTaskDraft, type TaskStatus } from './lib/task-rules'
-import { summarizeSubtasks } from './lib/task-data'
+import { createBoardDraft, summarizeSubtasks } from './lib/task-data'
 
 type Task = {
   id: string
@@ -39,6 +39,10 @@ export default function App() {
   const [subtasks, setSubtasks] = useState<Subtask[]>([])
   const [comments, setComments] = useState<Comment[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
+  const [showBoardForm, setShowBoardForm] = useState(false)
+  const [boardName, setBoardName] = useState('')
+  const [boardDescription, setBoardDescription] = useState('')
+  const [boardColor, setBoardColor] = useState('#5d55d7')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [editing, setEditing] = useState<Task | null>(null)
@@ -136,6 +140,24 @@ export default function App() {
     setDescription('')
   }
 
+  async function addBoard(event: FormEvent) {
+    event.preventDefault()
+    const draft = createBoardDraft(boardName, boardDescription, boardColor)
+    if (!draft.name) return
+    setSaving(true)
+    setError('')
+    const { error: insertError } = await supabase.from('boards').insert(draft)
+    if (insertError) setError(insertError.message)
+    else {
+      setBoardName('')
+      setBoardDescription('')
+      setBoardColor('#5d55d7')
+      setShowBoardForm(false)
+      await loadTasks()
+    }
+    setSaving(false)
+  }
+
   return <main className="app-shell">
     <header className="hero">
       <div>
@@ -190,7 +212,13 @@ export default function App() {
     </section>}
 
     <section className="data-explorer" aria-labelledby="data-title">
-      <div><p className="eyebrow">SUPABASE EXPLORER</p><h2 id="data-title">כך הנתונים מחוברים</h2><p>המידע שמופיע כאן נטען מהטבלאות ב‑Supabase בזמן אמת.</p></div>
+      <div className="explorer-head"><div><p className="eyebrow">SUPABASE EXPLORER</p><h2 id="data-title">כך הנתונים מחוברים</h2><p>המידע שמופיע כאן נטען מהטבלאות ב‑Supabase בזמן אמת.</p></div><button className="new-board" type="button" onClick={() => setShowBoardForm((visible) => !visible)}>{showBoardForm ? 'סגירה' : '+ לוח חדש'}</button></div>
+      {showBoardForm && <form className="board-form" onSubmit={addBoard}>
+        <input value={boardName} onChange={(event) => setBoardName(event.target.value)} maxLength={80} placeholder="שם הלוח החדש" aria-label="שם הלוח החדש" required />
+        <input value={boardDescription} onChange={(event) => setBoardDescription(event.target.value)} maxLength={500} placeholder="תיאור קצר (אופציונלי)" aria-label="תיאור הלוח" />
+        <label className="color-picker">צבע <input type="color" value={boardColor} onChange={(event) => setBoardColor(event.target.value)} aria-label="צבע הלוח" /></label>
+        <button type="submit" disabled={saving}>{saving ? 'שומר...' : 'יצירת לוח'}</button>
+      </form>}
       <div className="data-grid">
         <article><h3>לוחות</h3><b>{boards.length}</b>{boards.map((board) => <p key={board.id}><i style={{ background: board.color }} />{board.name}</p>)}</article>
         <article><h3>פרויקטים</h3><b>{projects.length}</b>{projects.map((project) => <p key={project.id}>{project.name} <small>{project.status}</small></p>)}</article>

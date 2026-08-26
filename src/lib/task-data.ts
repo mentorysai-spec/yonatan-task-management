@@ -11,3 +11,7 @@ export function summarizeSubtasks(subtasks: SubtaskState[], taskId: string) {
 export function createBoardDraft(name: string, description: string, color: string) {
   return { name: name.trim(), description: description.trim(), color }
 }
+
+export function filterByBoard<T extends { board_id: string | null }>(records: T[], boardId: string) {
+  return records.filter((record) => record.board_id === boardId)
+}

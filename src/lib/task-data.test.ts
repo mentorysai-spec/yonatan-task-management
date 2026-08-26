@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createBoardDraft, summarizeSubtasks } from './task-data'
+import { createBoardDraft, filterByBoard, summarizeSubtasks } from './task-data'
 
 describe('summarizeSubtasks', () => {
   it('reports completed items out of all task subtasks', () => {
@@ -16,5 +16,13 @@ describe('summarizeSubtasks', () => {
       description: 'רעיון להתנסות',
       color: '#22c55e',
     })
+  })
+
+  it('filters records to the selected board', () => {
+    expect(filterByBoard([
+      { id: 'a', board_id: 'board-a' },
+      { id: 'b', board_id: 'board-b' },
+      { id: 'none', board_id: null },
+    ], 'board-a')).toEqual([{ id: 'a', board_id: 'board-a' }])
   })
 })

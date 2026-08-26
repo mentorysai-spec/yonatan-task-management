@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { supabase } from './lib/supabase'
 import { createTaskDraft, moveTask, updateTaskDraft, type TaskStatus } from './lib/task-rules'
-import { createBoardDraft, summarizeSubtasks } from './lib/task-data'
+import { createBoardDraft, filterByBoard, summarizeSubtasks } from './lib/task-data'
 
 type Task = {
   id: string
@@ -18,7 +18,7 @@ type Task = {
 
 type Board = { id: string; name: string; description: string; color: string }
 type Project = { id: string; board_id: string; name: string; status: 'active' | 'on_hold' | 'completed' }
-type Label = { id: string; name: string; color: string }
+type Label = { id: string; board_id: string; name: string; color: string }
 type TaskLabel = { task_id: string; label_id: string }
 type Subtask = { id: string; task_id: string; title: string; is_completed: boolean }
 type Comment = { id: string; task_id: string; author_name: string; body: string }
@@ -33,6 +33,7 @@ const columns: Array<{ id: TaskStatus; label: string; hint: string }> = [
 export default function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [boards, setBoards] = useState<Board[]>([])
+  const [selectedBoardId, setSelectedBoardId] = useState('')
   const [projects, setProjects] = useState<Project[]>([])
   const [labels, setLabels] = useState<Label[]>([])
   const [taskLabels, setTaskLabels] = useState<TaskLabel[]>([])
@@ -56,7 +57,7 @@ export default function App() {
       supabase.from('tasks').select('id,title,description,status,position,board_id,project_id,priority,due_date,estimated_minutes').order('status').order('position'),
       supabase.from('boards').select('id,name,description,color'),
       supabase.from('projects').select('id,board_id,name,status'),
-      supabase.from('labels').select('id,name,color'),
+      supabase.from('labels').select('id,board_id,name,color'),
       supabase.from('task_labels').select('task_id,label_id'),
       supabase.from('subtasks').select('id,task_id,title,is_completed').order('position'),
       supabase.from('task_comments').select('id,task_id,author_name,body'),
@@ -66,7 +67,9 @@ export default function App() {
     if (queryError) setError(queryError.message)
     else {
       setTasks((taskResult.data ?? []) as Task[])
-      setBoards((boardResult.data ?? []) as Board[])
+      const loadedBoards = (boardResult.data ?? []) as Board[]
+      setBoards(loadedBoards)
+      setSelectedBoardId((current) => current || loadedBoards[0]?.id || '')
       setProjects((projectResult.data ?? []) as Project[])
       setLabels((labelResult.data ?? []) as Label[])
       setTaskLabels((taskLabelResult.data ?? []) as TaskLabel[])
@@ -79,14 +82,17 @@ export default function App() {
 
   useEffect(() => { void loadTasks() }, [])
 
+  const visibleTasks = useMemo(() => filterByBoard(tasks, selectedBoardId), [tasks, selectedBoardId])
+  const visibleProjects = useMemo(() => filterByBoard(projects, selectedBoardId), [projects, selectedBoardId])
+  const visibleLabels = useMemo(() => filterByBoard(labels, selectedBoardId), [labels, selectedBoardId])
   const grouped = useMemo(() => Object.fromEntries(columns.map((column) => [
     column.id,
-    tasks.filter((task) => task.status === column.id),
-  ])) as Record<TaskStatus, Task[]>, [tasks])
-  const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects])
+    visibleTasks.filter((task) => task.status === column.id),
+  ])) as Record<TaskStatus, Task[]>, [visibleTasks])
+  const projectById = useMemo(() => new Map(visibleProjects.map((project) => [project.id, project])), [visibleProjects])
   const labelsForTask = (taskId: string) => taskLabels
     .filter((mapping) => mapping.task_id === taskId)
-    .map((mapping) => labels.find((label) => label.id === mapping.label_id))
+    .map((mapping) => visibleLabels.find((label) => label.id === mapping.label_id))
     .filter((label): label is Label => Boolean(label))
 
   async function addTask(event: FormEvent) {
@@ -97,7 +103,7 @@ export default function App() {
     setError('')
     const request = editing
       ? supabase.from('tasks').update(draft).eq('id', editing.id)
-      : supabase.from('tasks').insert({ ...draft, position: grouped.todo.length })
+      : supabase.from('tasks').insert({ ...draft, board_id: selectedBoardId || null, position: grouped.todo.length })
     const { error: saveError } = await request
     if (saveError) setError(saveError.message)
     else {
@@ -165,7 +171,7 @@ export default function App() {
         <h1>יונתן ניהול משימות</h1>
         <p className="subtitle">מקום אחד ברור לכל מה שחשוב לך.</p>
       </div>
-      <span className="public-badge">לוח ציבורי</span>
+      <div className="board-switcher"><label htmlFor="board-select">לוח פעיל</label><select id="board-select" value={selectedBoardId} onChange={(event) => setSelectedBoardId(event.target.value)}>{boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}</select></div>
     </header>
 
     <section className="composer" aria-label="הוספת משימה">
@@ -220,10 +226,10 @@ export default function App() {
         <button type="submit" disabled={saving}>{saving ? 'שומר...' : 'יצירת לוח'}</button>
       </form>}
       <div className="data-grid">
-        <article><h3>לוחות</h3><b>{boards.length}</b>{boards.map((board) => <p key={board.id}><i style={{ background: board.color }} />{board.name}</p>)}</article>
-        <article><h3>פרויקטים</h3><b>{projects.length}</b>{projects.map((project) => <p key={project.id}>{project.name} <small>{project.status}</small></p>)}</article>
-        <article><h3>תגיות</h3><b>{labels.length}</b><div className="labels">{labels.map((label) => <span key={label.id} style={{ backgroundColor: label.color }}>{label.name}</span>)}</div></article>
-        <article><h3>פירוט קשרים</h3><b>{subtasks.length + comments.length + activities.length}</b><p>{subtasks.length} תתי־משימות · {comments.length} תגובות · {activities.length} פעולות</p></article>
+        <article><h3>לוח פעיל</h3><b>1</b>{boards.filter((board) => board.id === selectedBoardId).map((board) => <p key={board.id}><i style={{ background: board.color }} />{board.name}</p>)}</article>
+        <article><h3>פרויקטים</h3><b>{visibleProjects.length}</b>{visibleProjects.map((project) => <p key={project.id}>{project.name} <small>{project.status}</small></p>)}</article>
+        <article><h3>תגיות</h3><b>{visibleLabels.length}</b><div className="labels">{visibleLabels.map((label) => <span key={label.id} style={{ backgroundColor: label.color }}>{label.name}</span>)}</div></article>
+        <article><h3>פירוט קשרים</h3><b>{subtasks.filter((item) => visibleTasks.some((task) => task.id === item.task_id)).length + comments.filter((item) => visibleTasks.some((task) => task.id === item.task_id)).length + activities.filter((item) => visibleTasks.some((task) => task.id === item.task_id)).length}</b><p>{subtasks.filter((item) => visibleTasks.some((task) => task.id === item.task_id)).length} תתי־משימות · {comments.filter((item) => visibleTasks.some((task) => task.id === item.task_id)).length} תגובות · {activities.filter((item) => visibleTasks.some((task) => task.id === item.task_id)).length} פעולות</p></article>
       </div>
     </section>
   </main>
